@@ -20,7 +20,9 @@ import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.databinding.AdapterAppDrawerBinding
 import app.olauncher.databinding.AdapterPrivateSpaceHeaderBinding
-import app.olauncher.helper.appLabelMatches
+import app.olauncher.focus.appKey
+import app.olauncher.focus.scrubberLetter
+import app.olauncher.focus.searchAndRank
 import app.olauncher.helper.hideKeyboard
 import app.olauncher.helper.isSystemApp
 import app.olauncher.helper.showKeyboard
@@ -68,6 +70,18 @@ class AppDrawerAdapter(
 
     var appsList: MutableList<AppModel> = mutableListOf()
     var appFilteredList: MutableList<AppModel> = mutableListOf()
+
+    // Focus: launch counts break ties in search results (launch drawer only), and the
+    // first-letter scrubber narrows the list when there is no query.
+    @Volatile
+    var launchCounts: Map<String, Int> = emptyMap()
+
+    @Volatile
+    var letterFilter: Char? = null
+    var onListPublished: (() -> Unit)? = null
+
+    private fun launchesFor(app: AppModel): Int =
+        if (flag == Constants.FLAG_LAUNCH_APP) launchCounts[appKey(app.appPackage, app.user.toString())] ?: 0 else 0
 
     override fun getItemViewType(position: Int): Int {
         return when (appFilteredList.getOrNull(position)) {
@@ -132,12 +146,25 @@ class AppDrawerAdapter(
         return object : Filter() {
             override fun performFiltering(charSearch: CharSequence?): FilterResults {
                 isBangSearch = charSearch?.startsWith("!") ?: false
-                autoLaunch = allowAutoLaunch && (charSearch?.startsWith(" ")?.not() ?: true)
+                // Never auto-launch from a scrubber letter alone, only from a typed query
+                autoLaunch = allowAutoLaunch && !charSearch.isNullOrBlank() && charSearch.startsWith(" ").not()
 
-                val appFilteredList = (if (charSearch.isNullOrBlank()) appsList
-                else appsList.filter { app ->
-                    app !is AppModel.PrivateSpaceHeader && appLabelMatches(app.appLabel, charSearch)
-                } as MutableList<AppModel>)
+                val letter = letterFilter
+                val appFilteredList: MutableList<AppModel> = when {
+                    !charSearch.isNullOrBlank() -> searchAndRank(
+                        appsList.filter { it !is AppModel.PrivateSpaceHeader },
+                        charSearch,
+                        label = { it.appLabel },
+                        launches = ::launchesFor,
+                    ).toMutableList()
+
+                    letter != null -> appsList.filter { app ->
+                        app !is AppModel.PrivateSpaceHeader && app.appPackage.isNotEmpty() &&
+                                scrubberLetter(app.appLabel) == letter
+                    }.toMutableList()
+
+                    else -> appsList
+                }
 
                 val filterResults = FilterResults()
                 filterResults.values = appFilteredList
@@ -150,6 +177,7 @@ class AppDrawerAdapter(
                     val items = it as MutableList<AppModel>
                     appFilteredList = items
                     submitList(appFilteredList) {
+                        onListPublished?.invoke()
                         autoLaunch(constraint?.toString())
                     }
                 }

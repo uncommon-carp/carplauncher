@@ -20,7 +20,9 @@ import androidx.work.WorkManager
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
+import app.olauncher.focus.DAY_MILLIS
 import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.LAUNCH_RETENTION_DAYS
 import app.olauncher.focus.LaunchRepository
 import app.olauncher.focus.homeAppKeys
 import app.olauncher.focus.rankTopLaunched
@@ -63,6 +65,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val homeAppAlignment = MutableLiveData<Int>()
     val screenTimeValue = MutableLiveData<String>()
     val frequentApps = MutableLiveData<List<AppModel.App>>()
+    val launchCounts = MutableLiveData<Map<String, Int>>()
     private var screenTimeJob: Job? = null
 
     val privateSpaceApps = MutableLiveData<List<AppModel>?>()
@@ -433,6 +436,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun refreshLaunchCounts() {
+        viewModelScope.launch {
+            launchCounts.value = withContext(Dispatchers.IO) {
+                try {
+                    val since = System.currentTimeMillis() - LAUNCH_RETENTION_DAYS * DAY_MILLIS
+                    launchRepository.statsSince(since).mapValues { it.value.count }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    emptyMap()
+                }
+            }
+        }
+    }
+
     private suspend fun loadFrequentApps(): List<AppModel.App> {
         val limit = focusPrefs.frequentAppsNum
         if (limit <= 0) return emptyList()
@@ -469,6 +486,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val apps = getAppsList(appContext, prefs, includeRegularApps = true, includeHiddenApps)
             appList.value = apps
         }
+        refreshLaunchCounts()
         getPrivateSpaceAppList()
     }
 

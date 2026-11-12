@@ -14,6 +14,7 @@ class FocusPrefs(context: Context) {
 
     private val FREQUENT_APPS_NUM = "FREQUENT_APPS_NUM"
     private val FREQUENT_APPS_WINDOW_DAYS = "FREQUENT_APPS_WINDOW_DAYS"
+    private val AUTO_LAUNCH_SINGLE_MATCH = "AUTO_LAUNCH_SINGLE_MATCH"
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_FILENAME, 0)
 
@@ -24,6 +25,11 @@ class FocusPrefs(context: Context) {
     var frequentAppsWindowDays: Int
         get() = prefs.getInt(FREQUENT_APPS_WINDOW_DAYS, 7)
         set(value) = prefs.edit { putInt(FREQUENT_APPS_WINDOW_DAYS, value) }
+
+    /** Upstream always auto-launched a single search match; default stays on. */
+    var autoLaunchSingleMatch: Boolean
+        get() = prefs.getBoolean(AUTO_LAUNCH_SINGLE_MATCH, true)
+        set(value) = prefs.edit { putBoolean(AUTO_LAUNCH_SINGLE_MATCH, value) }
 }
 
 /** Keys of the visible home favorites (apps only; pinned shortcuts aren't ranked). */

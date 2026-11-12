@@ -5,12 +5,16 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.text.Spannable
+import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AnimationUtils
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.widget.SearchView
 import androidx.fragment.app.activityViewModels
@@ -24,6 +28,10 @@ import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
 import app.olauncher.databinding.FragmentAppDrawerBinding
+import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.appKey
+import app.olauncher.focus.scrubberLetters
+import app.olauncher.focus.sortByUsage
 import app.olauncher.helper.deletePinnedShortcut
 import app.olauncher.helper.hideKeyboard
 import app.olauncher.helper.isEinkDisplay
@@ -39,6 +47,10 @@ import app.olauncher.helper.uninstall
 class AppDrawerFragment : BaseFragment() {
 
     private lateinit var prefs: Prefs
+    private lateinit var focusPrefs: FocusPrefs
+    private var launchCounts: Map<String, Int> = emptyMap()
+    private var scrubberLetters: List<Char> = emptyList()
+    private var scrollToTopOnPublish = false
     private lateinit var adapter: AppDrawerAdapter
     private lateinit var linearLayoutManager: LinearLayoutManager
     private var searchTextView: TextView? = null
@@ -67,6 +79,7 @@ class AppDrawerFragment : BaseFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         prefs = Prefs(requireContext())
+        focusPrefs = FocusPrefs(requireContext())
         arguments?.let {
             flag = it.getInt(Constants.Key.FLAG, Constants.FLAG_LAUNCH_APP)
             canRename = it.getBoolean(Constants.Key.RENAME, false)
@@ -77,6 +90,7 @@ class AppDrawerFragment : BaseFragment() {
         initAdapter()
         initObservers()
         initClickListeners()
+        initLetterScrubber()
     }
 
     private fun initViews() {
@@ -106,7 +120,8 @@ class AppDrawerFragment : BaseFragment() {
 
             override fun onQueryTextChange(newText: String): Boolean {
                 try {
-                    adapter.allowAutoLaunch = !isSearchComposing()
+                    adapter.allowAutoLaunch = focusPrefs.autoLaunchSingleMatch && !isSearchComposing()
+                    if (newText.isNotBlank() && adapter.letterFilter != null) setLetterFilter(null)
                     adapter.filter.filter(newText)
                     binding.appRename.visibility =
                         if (canRename && newText.isNotBlank()) View.VISIBLE else View.GONE
@@ -268,6 +283,7 @@ class AppDrawerFragment : BaseFragment() {
             viewModel.hiddenApps.observe(viewLifecycleOwner) {
                 it?.let {
                     adapter.setAppList(it.toMutableList())
+                    populateLetterScrubber(it)
                 }
             }
         } else {
@@ -276,6 +292,11 @@ class AppDrawerFragment : BaseFragment() {
                 updateCombinedAppList()
             }
             if (flag == Constants.FLAG_LAUNCH_APP) {
+                viewModel.launchCounts.observe(viewLifecycleOwner) {
+                    launchCounts = it
+                    adapter.launchCounts = it
+                    updateCombinedAppList()
+                }
                 viewModel.privateSpaceAvailable.observe(viewLifecycleOwner) {
                     currentPrivateSpaceAvailable = it
                     updateCombinedAppList()
@@ -294,7 +315,10 @@ class AppDrawerFragment : BaseFragment() {
 
     private fun updateCombinedAppList() {
         val apps = currentAppList ?: return
-        val combined = apps.toMutableList()
+        // Focus: launch drawer is most-launched first, alphabetical among equals
+        val combined = if (flag == Constants.FLAG_LAUNCH_APP)
+            sortByUsage(apps) { launchCounts[appKey(it.appPackage, it.user.toString())] ?: 0 }.toMutableList()
+        else apps.toMutableList()
 
         if (flag == Constants.FLAG_LAUNCH_APP && currentPrivateSpaceAvailable) {
             combined.add(AppModel.PrivateSpaceHeader(isLocked = currentPrivateSpaceLocked))
@@ -305,6 +329,91 @@ class AppDrawerFragment : BaseFragment() {
 
         adapter.setAppList(combined)
         adapter.filter.filter(binding.search.query)
+        populateLetterScrubber(combined)
+    }
+
+    // Focus: first-letter scrubber. Tap or drag to show only apps starting with that letter
+    // (still usage-sorted); tap the active letter again, or type, to clear it.
+    private fun initLetterScrubber() {
+        adapter.onListPublished = {
+            if (scrollToTopOnPublish) {
+                scrollToTopOnPublish = false
+                binding.recyclerView.scrollToPosition(0)
+            }
+        }
+        val scrubber = binding.letterScrubber
+        (scrubber.layoutParams as FrameLayout.LayoutParams).gravity =
+            if (prefs.appLabelAlignment == Gravity.END) Gravity.START else Gravity.END
+        var activeAtDown: Char? = null
+        var moved = false
+        scrubber.setOnTouchListener { view, event ->
+            val letter = letterAt(view.height, view.paddingTop, view.paddingBottom, event.y)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    binding.search.hideKeyboard()
+                    activeAtDown = adapter.letterFilter
+                    moved = false
+                    if (letter != null && letter != activeAtDown) setLetterFilter(letter)
+                }
+
+                MotionEvent.ACTION_MOVE -> if (letter != null && letter != adapter.letterFilter) {
+                    moved = true
+                    setLetterFilter(letter)
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    if (!moved && letter != null && letter == activeAtDown) setLetterFilter(null)
+                    view.performClick()
+                }
+            }
+            true
+        }
+    }
+
+    private fun letterAt(height: Int, padTop: Int, padBottom: Int, y: Float): Char? {
+        if (scrubberLetters.isEmpty()) return null
+        val usable = (height - padTop - padBottom).coerceAtLeast(1)
+        val index = ((y - padTop) / usable * scrubberLetters.size).toInt()
+        return scrubberLetters[index.coerceIn(0, scrubberLetters.lastIndex)]
+    }
+
+    private fun setLetterFilter(letter: Char?) {
+        adapter.letterFilter = letter
+        if (letter != null && binding.search.query.isNotEmpty()) binding.search.setQuery("", false)
+        highlightScrubber()
+        scrollToTopOnPublish = true
+        adapter.filter.filter(binding.search.query)
+    }
+
+    private fun populateLetterScrubber(apps: List<AppModel>) {
+        val letters = scrubberLetters(apps.filter { it !is AppModel.PrivateSpaceHeader }.map { it.appLabel })
+        if (letters == scrubberLetters) return
+        scrubberLetters = letters
+        val scrubber = binding.letterScrubber
+        scrubber.removeAllViews()
+        letters.forEach { letter ->
+            scrubber.addView(TextView(requireContext(), null, 0, R.style.TextSmall).apply {
+                text = letter.toString()
+                textSize = 11f
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            })
+        }
+        if (adapter.letterFilter != null && adapter.letterFilter !in letters) adapter.letterFilter = null
+        highlightScrubber()
+    }
+
+    private fun highlightScrubber() {
+        val active = adapter.letterFilter
+        val scrubber = binding.letterScrubber
+        for (i in 0 until scrubber.childCount) {
+            val child = scrubber.getChildAt(i) as TextView
+            val selected = scrubberLetters.getOrNull(i) == active
+            child.alpha = if (active == null || selected) 0.9f else 0.35f
+            child.paint.isFakeBoldText = selected
+            child.invalidate()
+        }
     }
 
     private fun initClickListeners() {

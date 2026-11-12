@@ -18,12 +18,17 @@ class FocusSettingsController(
     fun bind() {
         binding.frequentAppsNum.setOnClickListener { showFrequentAppsNumMenu(it) }
         binding.frequentAppsWindow.setOnClickListener { showFrequentAppsWindowMenu(it) }
+        binding.autoLaunchSingleMatch.setOnClickListener {
+            focusPrefs.autoLaunchSingleMatch = !focusPrefs.autoLaunchSingleMatch
+            populate()
+        }
         populate()
     }
 
     private fun populate() {
         binding.frequentAppsNum.text = focusPrefs.frequentAppsNum.toString()
         binding.frequentAppsWindow.text = formatDays(focusPrefs.frequentAppsWindowDays)
+        binding.autoLaunchSingleMatch.text = onOff(focusPrefs.autoLaunchSingleMatch)
     }
 
     private fun showFrequentAppsNumMenu(anchor: View) {
@@ -44,6 +49,8 @@ class FocusSettingsController(
             populate()
         }
     }
+
+    private fun onOff(value: Boolean): String = context.getString(if (value) R.string.on else R.string.off)
 
     private fun formatDays(days: Int): String =
         if (days == 1) context.getString(R.string.one_day) else context.getString(R.string.n_days, days)
