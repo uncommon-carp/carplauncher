@@ -6,5 +6,21 @@
     <string name="n_days">%d days</string>
     <string name="one_day">1 day</string>
     <string name="auto_launch_single_match">Launch when search has one match</string>
+    <string name="modes">Modes</string>
+    <string name="modes_note">Each mode has its own home apps. Tap the mode name on home to switch, long-press it to pick. A manual switch lasts until the next scheduled change.</string>
+    <string name="add_mode">Add mode…</string>
+    <string name="mode_name">Mode name</string>
+    <string name="switch_to_mode">Switch to this mode</string>
+    <string name="schedule">Schedule…</string>
+    <string name="delete_mode">Delete</string>
+    <string name="schedule_days">Active on</string>
+    <string name="schedule_start">Starts at</string>
+    <string name="schedule_end">Ends at</string>
+    <string name="no_schedule">No schedule</string>
+    <string name="next">Next</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="mode_schedule_summary">%1$s: %2$s, %3$s–%4$s</string>
+    <string name="mode_schedule_none">%1$s: switch manually</string>
     <string name="focus_tracking_note">Counts only launches made from this launcher. Stored on this device only.</string>
 </resources>

@@ -18,7 +18,10 @@ import app.olauncher.data.AppModel
 import app.olauncher.ui.AppDrawerAdapter
 import app.olauncher.R
 import app.olauncher.data.Prefs
+import android.widget.TextView
+import app.olauncher.focus.DEFAULT_MODE_ID
 import app.olauncher.focus.LaunchRepository
+import app.olauncher.focus.ModeManager
 import app.olauncher.focus.appKey
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -122,6 +125,45 @@ class FocusSmokeTest {
         assertEquals(listOf("Beta", "Bravo"), activity.drawerLabels())
         tap(scrubber, middle) // tapping the active letter clears it
         assertEquals(4, activity.drawerLabels().size)
+    }
+
+    @Test
+    fun `modes keep separate favorites and the home label switches them`() {
+        val prefs = Prefs(context)
+        prefs.homeAppsNum = 2
+        prefs.appName1 = "Mail"
+        prefs.appPackage1 = "pkg.mail"
+        val modes = ModeManager(context)
+        val evening = modes.addMode("Evening")
+
+        modes.switchManually(evening.id)
+        assertEquals("Mail", prefs.appName1) // new modes start as a copy
+        prefs.appName1 = "Books"
+        prefs.appPackage1 = "pkg.books"
+        prefs.homeAppsNum = 3
+
+        modes.switchManually(DEFAULT_MODE_ID)
+        assertEquals("Mail", prefs.appName1)
+        assertEquals(2, prefs.homeAppsNum)
+
+        modes.switchManually(evening.id)
+        assertEquals("Books", prefs.appName1)
+        assertEquals(3, prefs.homeAppsNum)
+
+        withActivity { activity ->
+            val label = activity.findViewById<TextView>(R.id.modeLabel)
+            assertEquals(View.VISIBLE, label.visibility)
+            assertEquals("Evening", label.text.toString())
+            label.performClick() // cycles to the next mode
+            idle()
+            assertEquals("Default", label.text.toString())
+            // (Home clears favorites whose package isn't installed, so check the mode, not the slot)
+            assertEquals(DEFAULT_MODE_ID, ModeManager(context).activeMode.id)
+        }
+
+        modes.deleteMode(evening.id)
+        assertEquals(1, modes.modes.size)
+        assertEquals(DEFAULT_MODE_ID, modes.activeMode.id)
     }
 
     @Test

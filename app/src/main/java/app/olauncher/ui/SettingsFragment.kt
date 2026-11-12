@@ -29,6 +29,7 @@ import app.olauncher.databinding.DialogNotWorkingBinding
 import app.olauncher.databinding.DialogTextSizeBinding
 import app.olauncher.databinding.FragmentSettingsBinding
 import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.ModeManager
 import app.olauncher.helper.appUsagePermissionGranted
 import app.olauncher.helper.createDialog
 import app.olauncher.helper.getColorFromAttr
@@ -96,7 +97,7 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
         populateActionHints()
         initClickListeners()
         initObservers()
-        FocusSettingsController(binding.focusSettings, FocusPrefs(requireContext())).bind()
+        FocusSettingsController(binding.focusSettings, FocusPrefs(requireContext()), ModeManager(requireContext())).bind()
 
         if (showPentastic)
             binding.footer.text = getText(R.string.new_app_minimal_todo_lists)

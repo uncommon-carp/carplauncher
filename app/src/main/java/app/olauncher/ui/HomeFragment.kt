@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -30,6 +31,8 @@ import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
 import app.olauncher.databinding.FragmentHomeBinding
+import app.olauncher.focus.ModeManager
+import app.olauncher.focus.nextModeId
 import app.olauncher.helper.appUsagePermissionGranted
 import app.olauncher.helper.dpToPx
 import app.olauncher.helper.expandNotificationDrawer
@@ -41,6 +44,7 @@ import app.olauncher.helper.openCalendar
 import app.olauncher.helper.openCameraApp
 import app.olauncher.helper.openDialerApp
 import app.olauncher.helper.setPlainWallpaperByTheme
+import app.olauncher.helper.showPopupMenu
 import app.olauncher.helper.showToast
 import app.olauncher.listener.OnSwipeTouchListener
 import app.olauncher.listener.ViewSwipeTouchListener
@@ -51,6 +55,7 @@ import java.util.Locale
 class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListener {
 
     private lateinit var prefs: Prefs
+    private lateinit var modeManager: ModeManager
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -65,6 +70,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         prefs = Prefs(requireContext())
+        modeManager = ModeManager(requireContext())
         viewModel = activity?.run {
             ViewModelProvider(this)[MainViewModel::class.java]
         } ?: throw Exception("Invalid Activity")
@@ -94,6 +100,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             R.id.date -> openCalendarApp()
             R.id.setDefaultLauncher -> viewModel.resetLauncherLiveData.call()
             R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
+            R.id.modeLabel -> switchMode(nextModeId(modeManager.modes, modeManager.activeMode.id))
 
             else -> {
                 // Focus: frequent-apps row items carry their AppModel as the tag
@@ -166,6 +173,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 prefs.screenTimeAppUser = ""
             }
 
+            R.id.modeLabel -> showModeMenu(view)
+
             R.id.setDefaultLauncher -> {
                 prefs.hideSetDefaultLauncher = true
                 binding.setDefaultLauncher.visibility = View.GONE
@@ -228,6 +237,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         binding.homeApp6.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp6))
         binding.homeApp7.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp7))
         binding.homeApp8.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp8))
+        binding.modeLabel.setOnTouchListener(getViewSwipeTouchListener(context, binding.modeLabel))
     }
 
     private fun initClickListeners() {
@@ -260,6 +270,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         binding.homeApp6.setOnLongClickListener(this)
         binding.homeApp7.setOnLongClickListener(this)
         binding.homeApp8.setOnLongClickListener(this)
+        binding.modeLabel.setOnClickListener(this)
+        binding.modeLabel.setOnLongClickListener(this)
     }
 
     private fun setHomeAlignment(horizontalGravity: Int = prefs.homeAlignment) {
@@ -322,7 +334,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     }
 
     private fun populateHomeScreen(appCountUpdated: Boolean) {
-        if (appCountUpdated) hideHomeApps()
+        // Focus: swap in the scheduled mode's favorites before reading the home slots
+        val modeChanged = modeManager.applySchedule()
+        if (appCountUpdated || modeChanged) hideHomeApps()
+        populateModeLabel()
         populateDateTime()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
@@ -432,6 +447,24 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
         textView.text = ""
         return false
+    }
+
+    private fun populateModeLabel() {
+        val modes = modeManager.modes
+        binding.modeLabel.isVisible = modes.size > 1
+        binding.modeLabel.text = modeManager.activeMode.name
+    }
+
+    private fun switchMode(modeId: String) {
+        modeManager.switchManually(modeId)
+        populateHomeScreen(true)
+    }
+
+    private fun showModeMenu(anchor: View) {
+        val modes = modeManager.modes
+        anchor.showPopupMenu(configure = { menu ->
+            modes.forEachIndexed { i, mode -> menu.add(Menu.NONE, i, i, mode.name) }
+        }) { item -> modes.getOrNull(item.itemId)?.let { switchMode(it.id) } }
     }
 
     private fun populateFrequentApps(apps: List<AppModel.App>) {
