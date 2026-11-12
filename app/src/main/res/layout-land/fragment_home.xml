@@ -179,6 +179,16 @@
             android:visibility="gone"
             tools:visibility="visible" />
 
+        <!-- Focus: most-launched apps over the rolling window, filled in code -->
+        <LinearLayout
+            android:id="@+id/frequentAppsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
     </LinearLayout>
 
     <TextView

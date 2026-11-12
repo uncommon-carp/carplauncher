@@ -20,12 +20,18 @@ import androidx.work.WorkManager
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
+import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.LaunchRepository
+import app.olauncher.focus.homeAppKeys
+import app.olauncher.focus.rankTopLaunched
+import app.olauncher.focus.windowStart
 import app.olauncher.helper.SingleLiveEvent
 import app.olauncher.helper.WallpaperWorker
 import app.olauncher.helper.formattedTimeSpent
 import app.olauncher.helper.getAppsList
 import app.olauncher.helper.getPrivateSpaceApps
 import app.olauncher.helper.getPrivateSpaceUserHandle
+import app.olauncher.helper.getUserHandleFromString
 import app.olauncher.helper.hasBeenMinutes
 import app.olauncher.helper.isOlauncherDefault
 import app.olauncher.helper.isPackageInstalled
@@ -43,6 +49,8 @@ import java.util.concurrent.TimeUnit
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext by lazy { application.applicationContext }
     private val prefs = Prefs(appContext)
+    private val focusPrefs = FocusPrefs(appContext)
+    private val launchRepository by lazy { LaunchRepository(appContext) }
 
     val firstOpen = MutableLiveData<Boolean>()
     val refreshHome = MutableLiveData<Boolean>()
@@ -54,6 +62,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val launcherResetFailed = MutableLiveData<Boolean>()
     val homeAppAlignment = MutableLiveData<Int>()
     val screenTimeValue = MutableLiveData<String>()
+    val frequentApps = MutableLiveData<List<AppModel.App>>()
     private var screenTimeJob: Job? = null
 
     val privateSpaceApps = MutableLiveData<List<AppModel>?>()
@@ -119,6 +128,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
             launcher.startShortcut(shortcut, null, null)
+            recordLaunch(appModel.appPackage, appModel.user)
         } catch (_: Exception) {
             appContext.showToast(appContext.getString(R.string.unable_to_open_shortcut))
         }
@@ -387,15 +397,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         try {
             launcher.startMainActivity(component, userHandle, null, null)
+            recordLaunch(packageName, userHandle)
         } catch (e: SecurityException) {
             try {
                 launcher.startMainActivity(component, android.os.Process.myUserHandle(), null, null)
+                recordLaunch(packageName, android.os.Process.myUserHandle())
             } catch (e: Exception) {
                 appContext.showToast(appContext.getString(R.string.unable_to_open_app))
             }
         } catch (e: Exception) {
             appContext.showToast(appContext.getString(R.string.unable_to_open_app))
         }
+    }
+
+    private fun recordLaunch(packageName: String, user: UserHandle) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                launchRepository.record(packageName, user.toString())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun refreshFrequentApps() {
+        viewModelScope.launch {
+            frequentApps.value = withContext(Dispatchers.IO) {
+                try {
+                    loadFrequentApps()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    emptyList()
+                }
+            }
+        }
+    }
+
+    private suspend fun loadFrequentApps(): List<AppModel.App> {
+        val limit = focusPrefs.frequentAppsNum
+        if (limit <= 0) return emptyList()
+        val now = System.currentTimeMillis()
+        val stats = launchRepository.statsSince(windowStart(now, focusPrefs.frequentAppsWindowDays))
+        val exclude = prefs.homeAppKeys() + prefs.hiddenApps
+        val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+        // Rank everything, then resolve in order: uninstalled apps drop out without leaving gaps
+        return rankTopLaunched(stats, stats.size, exclude).asSequence()
+            .mapNotNull { key ->
+                val (appPackage, userString) = key.split("|", limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+                if (appPackage == BuildConfig.APPLICATION_ID) return@mapNotNull null
+                val user = getUserHandleFromString(appContext, userString)
+                if (user.toString() != userString) return@mapNotNull null
+                val activity = try {
+                    launcher.getActivityList(appPackage, user).firstOrNull()
+                } catch (e: Exception) {
+                    null
+                } ?: return@mapNotNull null
+                AppModel.App(
+                    appLabel = prefs.getAppRenameLabel(appPackage).ifBlank { activity.label.toString() },
+                    key = null,
+                    appPackage = appPackage,
+                    activityClassName = activity.componentName.className,
+                    user = user,
+                )
+            }
+            .take(limit)
+            .toList()
     }
 
     fun getAppList(includeHiddenApps: Boolean = false) {

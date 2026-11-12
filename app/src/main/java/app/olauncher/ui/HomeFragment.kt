@@ -96,6 +96,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
 
             else -> {
+                // Focus: frequent-apps row items carry their AppModel as the tag
+                (view.tag as? AppModel)?.let {
+                    viewModel.selectedApp(it, Constants.FLAG_LAUNCH_APP)
+                    return
+                }
                 try { // Launch app
                     val appLocation = view.tag.toString().toInt()
                     homeAppClicked(appLocation)
@@ -202,6 +207,9 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
         viewModel.screenTimeValue.observe(viewLifecycleOwner) {
             it?.let { binding.tvScreenTime.text = it }
+        }
+        viewModel.frequentApps.observe(viewLifecycleOwner) {
+            populateFrequentApps(it.orEmpty())
         }
         // Home button for recents feature disabled
         // viewModel.showRecentApps.observe(viewLifecycleOwner) {
@@ -319,6 +327,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             populateScreenTime()
+        viewModel.refreshFrequentApps()
 
         val homeAppsNum = prefs.homeAppsNum
         if (homeAppsNum == 0) return
@@ -423,6 +432,21 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
         textView.text = ""
         return false
+    }
+
+    private fun populateFrequentApps(apps: List<AppModel.App>) {
+        val row = binding.frequentAppsRow
+        row.removeAllViews()
+        row.isVisible = apps.isNotEmpty()
+        val inflater = LayoutInflater.from(row.context)
+        apps.forEach { app ->
+            val item = inflater.inflate(R.layout.item_frequent_app, row, false) as TextView
+            item.text = app.appLabel
+            item.tag = app
+            item.setOnClickListener(this)
+            item.setOnTouchListener(getViewSwipeTouchListener(requireContext(), item))
+            row.addView(item)
+        }
     }
 
     private fun hideHomeApps() {

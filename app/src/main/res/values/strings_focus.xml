@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus">Focus</string>
+    <string name="frequent_apps_on_home">Frequent apps on home</string>
+    <string name="frequent_apps_window">Frequency window</string>
+    <string name="n_days">%d days</string>
+    <string name="one_day">1 day</string>
+    <string name="focus_tracking_note">Counts only launches made from this launcher. Stored on this device only.</string>
+</resources>

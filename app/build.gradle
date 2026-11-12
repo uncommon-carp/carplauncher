@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'com.google.devtools.ksp'
 
 android {
     compileSdk 36
@@ -45,6 +46,9 @@ android {
         includeInApk = false
         includeInBundle = true
     }
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
     namespace 'app.olauncher'
 }
 
@@ -68,5 +72,13 @@ dependencies {
     //Material dependency
     implementation libs.material
 
+    // Focus features: local launch log
+    implementation libs.room.runtime
+    implementation libs.room.ktx
+    ksp libs.room.compiler
+
     testImplementation libs.junit
+    testImplementation libs.robolectric
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
 }
