@@ -22,6 +22,10 @@ import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
 import app.olauncher.focus.DAY_MILLIS
 import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.FrictionDecision
+import app.olauncher.focus.frictionDecision
+import app.olauncher.focus.isDistracting
+import app.olauncher.focus.startOfLocalDay
 import app.olauncher.focus.LAUNCH_RETENTION_DAYS
 import app.olauncher.focus.LaunchRepository
 import app.olauncher.focus.homeAppKeys
@@ -66,6 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val screenTimeValue = MutableLiveData<String>()
     val frequentApps = MutableLiveData<List<AppModel.App>>()
     val launchCounts = MutableLiveData<Map<String, Int>>()
+    val frictionRequest = SingleLiveEvent<Pair<AppModel, FrictionDecision.Challenge>>()
     private var screenTimeJob: Job? = null
 
     val privateSpaceApps = MutableLiveData<List<AppModel>?>()
@@ -84,20 +89,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectedApp(appModel: AppModel, flag: Int) {
         if (appModel is AppModel.PrivateSpaceHeader) return
         when (flag) {
-            Constants.FLAG_LAUNCH_APP -> {
-                when (appModel) {
-                    is AppModel.PinnedShortcut -> launchShortcut(appModel)
-                    is AppModel.App ->
-                        launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
-
-                    else -> {}
-                }
-            }
+            Constants.FLAG_LAUNCH_APP -> launchThroughFriction(appModel)
 
             Constants.FLAG_HIDDEN_APPS -> {
-                if (appModel is AppModel.App) {
-                    launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
-                }
+                if (appModel is AppModel.App) launchThroughFriction(appModel)
             }
 
             Constants.FLAG_SET_HOME_APP_1 -> saveHomeApp(appModel, 1)
@@ -116,6 +111,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Constants.FLAG_SET_SCREEN_TIME_APP -> saveScreenTimeApp(appModel)
         }
     }
+
+    private fun launchNow(appModel: AppModel) {
+        when (appModel) {
+            is AppModel.PinnedShortcut -> launchShortcut(appModel)
+            is AppModel.App ->
+                launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+
+            else -> {}
+        }
+    }
+
+    // Focus: apps flagged as distracting go through a pause / question / daily cap first.
+    // Unflagged apps launch synchronously exactly as upstream.
+    private fun launchThroughFriction(appModel: AppModel) {
+        val user = appModel.user.toString()
+        if (!isDistracting(focusPrefs.distractingApps, appModel.appPackage, user)) {
+            launchNow(appModel)
+            return
+        }
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val launchesToday = withContext(Dispatchers.IO) {
+                try {
+                    launchRepository.countSince(appModel.appPackage, user, startOfLocalDay(now))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    0
+                }
+            }
+            when (val decision = frictionDecision(true, focusPrefs.frictionSettings, launchesToday)) {
+                FrictionDecision.Allow -> launchNow(appModel)
+                is FrictionDecision.Challenge -> frictionRequest.value = appModel to decision
+                is FrictionDecision.Refuse -> appContext.showToast(
+                    appContext.getString(R.string.friction_refused, appModel.appLabel, decision.dailyCap),
+                    android.widget.Toast.LENGTH_LONG
+                )
+            }
+        }
+    }
+
+    /** Called once the user has waited out (and answered) the friction dialog. */
+    fun launchAfterFriction(appModel: AppModel) = launchNow(appModel)
 
     private fun launchShortcut(appModel: AppModel.PinnedShortcut) {
         val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps

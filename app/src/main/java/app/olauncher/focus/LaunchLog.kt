@@ -1,6 +1,7 @@
 package app.olauncher.focus
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -46,6 +47,13 @@ abstract class FocusDatabase : RoomDatabase() {
             instance ?: Room.databaseBuilder(context.applicationContext, FocusDatabase::class.java, "focus.db")
                 .build()
                 .also { instance = it }
+        }
+
+        /** Robolectric reuses static state across tests while giving each a fresh app. */
+        @VisibleForTesting
+        fun resetForTests() = synchronized(this) {
+            instance?.close()
+            instance = null
         }
     }
 }

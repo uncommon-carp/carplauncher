@@ -44,6 +44,7 @@ import app.olauncher.helper.shareApp
 import app.olauncher.helper.showLauncherSelector
 import app.olauncher.helper.showMessageDialog
 import app.olauncher.helper.showToast
+import app.olauncher.ui.FrictionDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -208,6 +209,10 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.checkForMessages.observe(this) {
             checkForMessages()
+        }
+        viewModel.frictionRequest.observe(this) {
+            val (app, challenge) = it ?: return@observe
+            FrictionDialog.show(this, app, challenge) { viewModel.launchAfterFriction(app) }
         }
         viewModel.showDialog.observe(this) {
             when (it) {

@@ -31,6 +31,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowToast
+import app.olauncher.data.Constants
+import app.olauncher.focus.FocusPrefs
+import app.olauncher.focus.startOfLocalDay
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import java.time.Duration
 
 /**
  * Starts the real activity and walks the screens the focus features touch, so a layout,
@@ -43,13 +51,41 @@ class FocusSmokeTest {
 
     @Before
     fun skipFirstRunFlows() {
+        app.olauncher.focus.FocusDatabase.resetForTests()
+        resetViewModelFactoryApplication()
+        ShadowDialog.reset()
         Prefs(context).apply {
             firstOpen = false
             firstSettingsOpen = false
         }
     }
 
+    /**
+     * AndroidViewModelFactory caches the first Application in a static; Robolectric keeps statics
+     * across tests but creates a new Application per test, so later ViewModels would see a stale one.
+     */
+    private fun resetViewModelFactoryApplication() {
+        val factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory::class.java
+        for (name in listOf("_instance", "sInstance")) {
+            runCatching { factory.getDeclaredField(name).apply { isAccessible = true }.set(null, null) }
+        }
+    }
+
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    /** Filtering runs on a worker thread and DiffUtil posts back, so poll until the UI settles. */
+    private fun eventually(block: () -> Unit) {
+        val deadline = System.currentTimeMillis() + 3000
+        while (true) {
+            idle()
+            try {
+                return block()
+            } catch (e: AssertionError) {
+                if (System.currentTimeMillis() > deadline) throw e
+                Thread.sleep(20)
+            }
+        }
+    }
 
     private fun withActivity(block: (MainActivity) -> Unit) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -110,8 +146,7 @@ class FocusSmokeTest {
         val user = android.os.Process.myUserHandle().toString()
         viewModel.launchCounts.value = mapOf(appKey("pkg.beta", user) to 5, appKey("pkg.charlie", user) to 1)
         viewModel.appList.value = listOf(app("Alpha"), app("Beta"), app("Bravo"), app("Charlie"))
-        idle()
-        assertEquals(listOf("Beta", "Charlie", "Alpha", "Bravo"), activity.drawerLabels())
+        eventually { assertEquals(listOf("Beta", "Charlie", "Alpha", "Bravo"), activity.drawerLabels()) }
 
         val scrubber = activity.findViewById<LinearLayout>(R.id.letterScrubber)
         assertEquals(3, scrubber.childCount) // A, B, C
@@ -122,9 +157,9 @@ class FocusSmokeTest {
         scrubber.layout(0, 0, 100, 300)
         val middle = 150f // "B"
         tap(scrubber, middle)
-        assertEquals(listOf("Beta", "Bravo"), activity.drawerLabels())
+        eventually { assertEquals(listOf("Beta", "Bravo"), activity.drawerLabels()) }
         tap(scrubber, middle) // tapping the active letter clears it
-        assertEquals(4, activity.drawerLabels().size)
+        eventually { assertEquals(4, activity.drawerLabels().size) }
     }
 
     @Test
@@ -164,6 +199,46 @@ class FocusSmokeTest {
         modes.deleteMode(evening.id)
         assertEquals(1, modes.modes.size)
         assertEquals(DEFAULT_MODE_ID, modes.activeMode.id)
+    }
+
+    @Test
+    fun `flagged app waits out the countdown, then the daily cap refuses it`() {
+        val user = android.os.Process.myUserHandle().toString()
+        FocusPrefs(context).apply {
+            distractingApps = setOf(appKey("pkg.social", user))
+            frictionDelaySeconds = 5
+            frictionDailyCap = 2
+        }
+        withActivity { activity ->
+            val viewModel = ViewModelProvider(activity)[MainViewModel::class.java]
+            viewModel.selectedApp(app("Social"), Constants.FLAG_LAUNCH_APP)
+            // getLatestDialog() skips AppCompat dialogs; the shown list includes them
+            eventually { assertEquals(1, ShadowDialog.getShownDialogs().size) }
+            val dialog = ShadowDialog.getShownDialogs().last()
+            assertTrue(dialog.isShowing)
+            val open = dialog.findViewById<TextView>(R.id.tvAction)
+            assertFalse(open.isEnabled)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            assertTrue(open.isEnabled)
+            open.performClick()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1)) // blur fade-out, then dismiss
+            assertFalse(dialog.isShowing)
+            eventually { assertEquals("App not found", ShadowToast.getTextOfLatestToast()) } // launch was attempted
+        }
+
+        // Two launches already today: the third is refused with no dialog
+        runBlocking {
+            val repo = LaunchRepository(context)
+            val today = startOfLocalDay(System.currentTimeMillis()) + 1
+            repeat(2) { repo.record("pkg.social", user, today) }
+        }
+        ShadowDialog.reset()
+        withActivity { activity ->
+            val viewModel = ViewModelProvider(activity)[MainViewModel::class.java]
+            viewModel.selectedApp(app("Social"), Constants.FLAG_LAUNCH_APP)
+            eventually { assertTrue(ShadowToast.getTextOfLatestToast()?.contains("daily limit of 2") == true) }
+            assertTrue(ShadowDialog.getShownDialogs().isEmpty())
+        }
     }
 
     @Test

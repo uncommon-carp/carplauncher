@@ -22,5 +22,26 @@
     <string name="save">Save</string>
     <string name="mode_schedule_summary">%1$s: %2$s, %3$s–%4$s</string>
     <string name="mode_schedule_none">%1$s: switch manually</string>
+    <string name="friction_title">Open %1$s?</string>
+    <string name="friction_open">Open</string>
+    <string name="friction_why">Why are you opening this?</string>
+    <string name="friction_wait">Take a breath… %1$d s</string>
+    <string name="friction_ready">Still want to?</string>
+    <plurals name="friction_left_today">
+        <item quantity="one">After this, %1$d launch left today.</item>
+        <item quantity="other">After this, %1$d launches left today.</item>
+    </plurals>
+    <string name="friction_refused">%1$s: daily limit of %2$d reached. Available again after midnight.</string>
+    <string name="flag_distracting">Flag</string>
+    <string name="unflag_distracting">Unflag</string>
+    <string name="flagged_distracting">%1$s flagged as distracting</string>
+    <string name="unflagged_distracting">%1$s no longer flagged</string>
+    <string name="distracting_apps">Distracting apps</string>
+    <string name="friction_delay">Pause before opening</string>
+    <string name="friction_ask_why">Ask why</string>
+    <string name="friction_daily_cap">Daily launch limit</string>
+    <string name="n_seconds">%d s</string>
+    <string name="none_flagged">None. Long-press an app in the drawer and tap Flag.</string>
+    <string name="friction_scope_note">Distracting apps: flag them from the drawer (long-press → Flag). The pause, question and daily limit only apply when you open them from this launcher (home, drawer, gestures). Notifications, links from other apps, recents and other launchers open them directly.</string>
     <string name="focus_tracking_note">Counts only launches made from this launcher. Stored on this device only.</string>
 </resources>

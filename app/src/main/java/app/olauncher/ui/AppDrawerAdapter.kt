@@ -37,6 +37,8 @@ class AppDrawerAdapter(
     private val appRenameListener: (AppModel, String) -> Unit,
     private val privateSpaceToggleListener: () -> Unit = {},
     private val privateSpaceSettingsListener: () -> Unit = {},
+    private val isDistracting: (AppModel) -> Boolean = { false },
+    private val appDistractingListener: (AppModel) -> Unit = {},
 ) : ListAdapter<AppModel, RecyclerView.ViewHolder>(DIFF_CALLBACK), Filterable {
 
     companion object {
@@ -132,7 +134,9 @@ class AppDrawerAdapter(
                     appDeleteListener,
                     appInfoListener,
                     appHideListener,
-                    appRenameListener
+                    appRenameListener,
+                    isDistracting,
+                    appDistractingListener,
                 )
             }
         } catch (e: Exception) {
@@ -257,6 +261,8 @@ class AppDrawerAdapter(
             appInfoListener: (AppModel) -> Unit,
             appHideListener: (AppModel, Int) -> Unit,
             appRenameListener: (AppModel, String) -> Unit,
+            isDistracting: (AppModel) -> Boolean,
+            appDistractingListener: (AppModel) -> Unit,
         ) = with(binding) {
             appHideLayout.visibility = View.GONE
             renameLayout.visibility = View.GONE
@@ -296,6 +302,11 @@ class AppDrawerAdapter(
                     appHideLayout.visibility = View.VISIBLE
                     // Only allow renaming non hidden apps
                     appRename.isVisible = flag != Constants.FLAG_HIDDEN_APPS
+                    // Focus: flag as distracting (apps only; shortcuts follow their app's flag)
+                    appFlag.isVisible = appModel is AppModel.App
+                    appFlag.text = root.context.getString(
+                        if (isDistracting(appModel)) R.string.unflag_distracting else R.string.flag_distracting
+                    )
                 }
                 true
             }
@@ -358,6 +369,11 @@ class AppDrawerAdapter(
                 }
             }
             appInfo.setOnClickListener { appInfoListener(appModel) }
+            appFlag.setOnClickListener {
+                appDistractingListener(appModel)
+                appHideLayout.visibility = View.GONE
+                appTitle.visibility = View.VISIBLE
+            }
             appDelete.setOnClickListener { appDeleteListener(appModel) }
             appMenuClose.setOnClickListener {
                 appHideLayout.visibility = View.GONE

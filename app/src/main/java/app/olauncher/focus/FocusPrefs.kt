@@ -18,6 +18,10 @@ class FocusPrefs(context: Context) {
     private val FREQUENT_APPS_WINDOW_DAYS = "FREQUENT_APPS_WINDOW_DAYS"
     private val AUTO_LAUNCH_SINGLE_MATCH = "AUTO_LAUNCH_SINGLE_MATCH"
     private val MODES = "MODES"
+    private val DISTRACTING_APPS = "DISTRACTING_APPS"
+    private val FRICTION_DELAY_SECONDS = "FRICTION_DELAY_SECONDS"
+    private val FRICTION_ASK_WHY = "FRICTION_ASK_WHY"
+    private val FRICTION_DAILY_CAP = "FRICTION_DAILY_CAP"
     private val ACTIVE_MODE_ID = "ACTIVE_MODE_ID"
     private val MODE_OVERRIDE_ID = "MODE_OVERRIDE_ID"
     private val MODE_OVERRIDE_AT = "MODE_OVERRIDE_AT"
@@ -36,6 +40,32 @@ class FocusPrefs(context: Context) {
     var autoLaunchSingleMatch: Boolean
         get() = prefs.getBoolean(AUTO_LAUNCH_SINGLE_MATCH, true)
         set(value) = prefs.edit { putBoolean(AUTO_LAUNCH_SINGLE_MATCH, value) }
+
+    /** "package|user" keys, like upstream's hidden apps. */
+    var distractingApps: Set<String>
+        get() = prefs.getStringSet(DISTRACTING_APPS, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit { putStringSet(DISTRACTING_APPS, value.toSet()) }
+
+    var frictionDelaySeconds: Int
+        get() = prefs.getInt(FRICTION_DELAY_SECONDS, 10)
+        set(value) = prefs.edit { putInt(FRICTION_DELAY_SECONDS, value) }
+
+    var frictionAskWhy: Boolean
+        get() = prefs.getBoolean(FRICTION_ASK_WHY, false)
+        set(value) = prefs.edit { putBoolean(FRICTION_ASK_WHY, value) }
+
+    var frictionDailyCap: Int
+        get() = prefs.getInt(FRICTION_DAILY_CAP, 0)
+        set(value) = prefs.edit { putInt(FRICTION_DAILY_CAP, value) }
+
+    val frictionSettings: FrictionSettings
+        get() = FrictionSettings(frictionDelaySeconds, frictionAskWhy, frictionDailyCap)
+
+    fun toggleDistracting(key: String): Boolean {
+        val flagged = key !in distractingApps
+        distractingApps = if (flagged) distractingApps + key else distractingApps - key
+        return flagged
+    }
 
     /** Always starts with the default mode, which holds the pre-existing favorites. */
     var modes: List<FocusMode>

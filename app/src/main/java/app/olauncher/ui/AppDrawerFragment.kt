@@ -30,6 +30,7 @@ import app.olauncher.data.Prefs
 import app.olauncher.databinding.FragmentAppDrawerBinding
 import app.olauncher.focus.FocusPrefs
 import app.olauncher.focus.appKey
+import app.olauncher.focus.isDistracting
 import app.olauncher.focus.scrubberLetters
 import app.olauncher.focus.sortByUsage
 import app.olauncher.helper.deletePinnedShortcut
@@ -248,7 +249,14 @@ class AppDrawerFragment : BaseFragment() {
             privateSpaceSettingsListener = {
                 viewModel.openPrivateSpaceSettings()
                 findNavController().popBackStack(R.id.mainFragment, false)
-            }
+            },
+            isDistracting = { isDistracting(focusPrefs.distractingApps, it.appPackage, it.user.toString()) },
+            appDistractingListener = { appModel ->
+                val flagged = focusPrefs.toggleDistracting(appKey(appModel.appPackage, appModel.user.toString()))
+                requireContext().showToast(
+                    getString(if (flagged) R.string.flagged_distracting else R.string.unflagged_distracting, appModel.appLabel)
+                )
+            },
         )
 
         linearLayoutManager = object : LinearLayoutManager(requireContext()) {

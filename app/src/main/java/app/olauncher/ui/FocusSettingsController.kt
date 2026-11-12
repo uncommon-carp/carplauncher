@@ -33,6 +33,17 @@ class FocusSettingsController(
         binding.frequentAppsNum.setOnClickListener { showFrequentAppsNumMenu(it) }
         binding.frequentAppsWindow.setOnClickListener { showFrequentAppsWindowMenu(it) }
         binding.modes.setOnClickListener { showModesMenu(it) }
+        binding.distractingApps.setOnClickListener { showDistractingApps() }
+        binding.frictionDelay.setOnClickListener { anchor ->
+            showChoiceMenu(anchor, listOf(0, 5, 10, 20, 30, 60), ::formatSeconds) { focusPrefs.frictionDelaySeconds = it }
+        }
+        binding.frictionAskWhy.setOnClickListener {
+            focusPrefs.frictionAskWhy = !focusPrefs.frictionAskWhy
+            populate()
+        }
+        binding.frictionDailyCap.setOnClickListener { anchor ->
+            showChoiceMenu(anchor, listOf(0, 1, 2, 3, 5, 10), ::formatCap) { focusPrefs.frictionDailyCap = it }
+        }
         binding.autoLaunchSingleMatch.setOnClickListener {
             focusPrefs.autoLaunchSingleMatch = !focusPrefs.autoLaunchSingleMatch
             populate()
@@ -43,6 +54,10 @@ class FocusSettingsController(
     private fun populate() {
         binding.frequentAppsNum.text = focusPrefs.frequentAppsNum.toString()
         binding.modes.text = modeManager.activeMode.name
+        binding.distractingApps.text = focusPrefs.distractingApps.size.toString()
+        binding.frictionDelay.text = formatSeconds(focusPrefs.frictionDelaySeconds)
+        binding.frictionAskWhy.text = onOff(focusPrefs.frictionAskWhy)
+        binding.frictionDailyCap.text = formatCap(focusPrefs.frictionDailyCap)
         binding.frequentAppsWindow.text = formatDays(focusPrefs.frequentAppsWindowDays)
         binding.autoLaunchSingleMatch.text = onOff(focusPrefs.autoLaunchSingleMatch)
     }
@@ -63,6 +78,56 @@ class FocusSettingsController(
         }) { item ->
             focusPrefs.frequentAppsWindowDays = item.itemId
             populate()
+        }
+    }
+
+    // Friction
+
+    private fun showChoiceMenu(anchor: View, options: List<Int>, format: (Int) -> String, onPick: (Int) -> Unit) {
+        anchor.showPopupMenu(configure = { menu ->
+            options.forEachIndexed { i, value -> menu.add(Menu.NONE, i, i, format(value)) }
+        }) { item ->
+            onPick(options[item.itemId])
+            populate()
+        }
+    }
+
+    private fun formatSeconds(seconds: Int): String =
+        if (seconds == 0) context.getString(R.string.off) else context.getString(R.string.n_seconds, seconds)
+
+    private fun formatCap(cap: Int): String = if (cap == 0) context.getString(R.string.off) else cap.toString()
+
+    /** Flagged apps with checkboxes; unticking unflags. Flagging happens from the drawer. */
+    private fun showDistractingApps() {
+        val keys = focusPrefs.distractingApps.sorted()
+        if (keys.isEmpty()) {
+            AlertDialog.Builder(context)
+                .setTitle(R.string.distracting_apps)
+                .setMessage(R.string.none_flagged)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+        val labels = keys.map(::labelFor).toTypedArray()
+        val keep = BooleanArray(keys.size) { true }
+        AlertDialog.Builder(context)
+            .setTitle(R.string.distracting_apps)
+            .setMultiChoiceItems(labels, keep) { _, i, on -> keep[i] = on }
+            .setPositiveButton(R.string.save) { _, _ ->
+                focusPrefs.distractingApps = keys.filterIndexed { i, _ -> keep[i] }.toSet()
+                populate()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun labelFor(key: String): String {
+        val appPackage = key.substringBefore('|')
+        return try {
+            val pm = context.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(appPackage, 0)).toString()
+        } catch (e: Exception) {
+            appPackage
         }
     }
 
